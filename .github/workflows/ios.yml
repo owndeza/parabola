@@ -15,12 +15,38 @@ jobs:
         run: brew install xcodegen
       - name: Generate Xcode project
         run: xcodegen generate
-      - name: Build Parabola
+      - name: Build unsigned device application
         run: >-
           xcodebuild
           -project Parabola.xcodeproj
           -scheme Parabola
-          -sdk iphonesimulator
-          -configuration Debug
+          -sdk iphoneos
+          -configuration Release
+          -derivedDataPath "$RUNNER_TEMP/ParabolaDerivedData"
           CODE_SIGNING_ALLOWED=NO
+          CODE_SIGNING_REQUIRED=NO
+          CODE_SIGN_IDENTITY=""
           build
+      - name: Package unsigned IPA
+        run: |
+          APP_PATH="$RUNNER_TEMP/ParabolaDerivedData/Build/Products/Release-iphoneos/Parabola.app"
+          test -d "$APP_PATH"
+          mkdir -p "$RUNNER_TEMP/ParabolaIPA/Payload"
+          ditto "$APP_PATH" "$RUNNER_TEMP/ParabolaIPA/Payload/Parabola.app"
+          cd "$RUNNER_TEMP/ParabolaIPA"
+          zip -qry "$GITHUB_WORKSPACE/Parabola-unsigned.ipa" Payload
+      - name: Verify unsigned IPA
+        run: |
+          test -f Parabola-unsigned.ipa
+          unzip -l Parabola-unsigned.ipa | grep -q "Payload/Parabola.app/Info.plist"
+          if unzip -l Parabola-unsigned.ipa | grep -q "Payload/Parabola.app/_CodeSignature/"; then
+            echo "Unexpected code signature found"
+            exit 1
+          fi
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Parabola-unsigned-IPA-${{ github.run_number }}
+          path: Parabola-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 30
